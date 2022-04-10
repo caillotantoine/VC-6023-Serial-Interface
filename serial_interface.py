@@ -5,10 +5,6 @@ import matplotlib.pyplot as plt
 from typing import List
 import numpy as np
 
-# oscillo = serial.Serial('/dev/tty.usbserial-14430', 9600, rtscts=True)
-# if oscillo.is_open:
-#     oscillo.close()
-# oscillo.open()
 MEMORYNUMBER = {1: "CH1 acquisition memory", 
                    2: "CH2 acquisition memory", 
                    3: "SAVE memory A", 
@@ -33,11 +29,12 @@ class Conditions:
     
     def __str__(self) -> str:
         out:str = ''
+        mode = 'single' if (self.horimode == 'A') else 'X-Y'
         out += 'Channel : \t' + MEMORYNUMBER[self.channel] + '\n'
-        out += 'Vert. mode : \t' + self.vertmode + '\n'
-        out += 'Horiz. mode : \t' + ('single' if self.horimode == 'A' else 'X-Y') + '\n'
-        out += 'Time/div : \t' + f'{self.A_time_div} {self.A_unit_div}' + '\n'
-        out += 'Volt/div : \t' + f'{self.volt_div * self.prob_factor} {self.unit_div}'
+        out += f'Vert. mode : \t {self.vertmode}\n'
+        out += f'Horiz. mode : \t {mode}\n'
+        out += f'Time/div : \t {self.A_time_div} {self.A_unit_div}\n'
+        out += f'Volt/div : \t {self.volt_div * self.prob_factor} {self.unit_div}'
         return  out
 
 class RawMeasurement:
@@ -99,12 +96,12 @@ class Oscilloscope:
         self.ser_port.setRTS(False)
         time.sleep(0.02)
         self.ser_port.write(cmd)
-        time.sleep(0.02)
+        time.sleep(0.05)
 
     def recv_data(self, est_size:int) -> bytes:
         time_required = float(est_size) * 8.0 / float(self.baudrate) * 1.2
         self.ser_port.setRTS(True)
-        data = self.ser_port.read_until(self.DEL)
+        data = self.ser_port.read_until(bytes(f'{self.DEL}', encoding='ASCII'))
         time.sleep(time_required)
         self.ser_port.setRTS(False)
         return data
@@ -128,7 +125,7 @@ class Oscilloscope:
         
         rawMeas = RawMeasurement()
         try:
-            rawMeas.channel = int(data[1])
+            rawMeas.channel = int(f'{data[1]:c}')
             rawMeas.addr = int(data[4:8])
             rawMeas.size = int(data[9:13])
         except:
@@ -147,25 +144,25 @@ class Oscilloscope:
         
         try:
             cond = Conditions()
-            cond.channel = int(data[1])
-            cond.vertmode = data[4:8]
-            cond.horimode = data[9]
+            cond.channel = int(f'{data[1]:c}')
+            cond.vertmode = str(data[4:8], encoding='ASCII')
+            cond.horimode = f'{data[9]:c}'
             cond.A_time_div = float(data[11:15])
-            cond.A_unit_div = data[16, 20]
+            cond.A_unit_div = str(data[16:20], encoding='ASCII')
             if cond.horimode == 'B':
                 cond.B_time_div = float(data[11:15])
-                cond.B_unit_div = data[16, 20]
+                cond.B_unit_div = str(data[16:20], encoding='ASCII')
             else:
                 cond.B_time_div = None
                 cond.B_unit_div = None
-            cond.is_calib = False if data[31:36] == 'UNCAL' else True
-            cond.prob_factor = 10 if data[37:41] == 'P10X' else 1
+            cond.is_calib = False if str(data[31:36], encoding='ASCII') == 'UNCAL' else True
+            cond.prob_factor = 10 if str(data[37:41], encoding='ASCII') == 'P10X' else 1
             cond.volt_div = float(data[42:46])
-            cond.unit_div = data[47:49]
+            cond.unit_div = str(data[47:49], encoding='ASCII')
             cond.delay = float(data[50:55])
             cond.n_sweeps = int(data[60:63])
-        except:
-            raise ValueError(2, 'Conversion error', data)
+        except Exception as e:
+            raise ValueError(2, 'Conversion error', data, e)
         
         return cond
 
@@ -174,3 +171,27 @@ if __name__ == "__main__":
     oscillo = Oscilloscope('/dev/tty.usbserial-14430', int('0b11001010', 2))
     print(oscillo)
     print(oscillo.get_measuresing_condition(1))
+
+# if __name__ == "__main__":
+#     oscillo = serial.Serial('/dev/tty.usbserial-14430', 9600, rtscts=True)
+#     if oscillo.is_open:
+#         oscillo.close()
+#     oscillo.open()
+#     while True:
+#         oscillo.setRTS(False)
+#         # cmd = bytes(f"R1(0000,2000,B)\r", encoding='ASCII')
+#         cmd = bytes(f"R0(1)\r", encoding='ASCII')
+#         oscillo.write(cmd)
+#         time.sleep(0.05)
+#         oscillo.setRTS(True)
+#         rcvdata = oscillo.read_until(bytes(f'\r', encoding='ASCII'))
+#         print(rcvdata)
+#         time.sleep(5)
+#         # try:
+#         #     (channel, addr, size, measurements) = decode_data(rcvdata)
+#         # except:
+#         #     time.sleep(10)
+#         #     continue
+#         # plt.plot(range(size), measurements)
+#         # # plt.draw()
+#         # plt.pause(10)
